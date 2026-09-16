@@ -48,6 +48,7 @@ async function startSock() {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
       console.log('Connection closed', { statusCode, hasEverConnected, loggedOut });
+      if (!hasEverConnected) latestQR = null; // stale QR is useless; force a fresh one on next click
       // Only auto-reconnect a session that was already linked (e.g. a network blip).
       // Never auto-retry pairing — that hammers WhatsApp's device-link rate limit.
       if (hasEverConnected && !loggedOut) startSock();
