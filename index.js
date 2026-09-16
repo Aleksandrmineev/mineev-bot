@@ -1,5 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
@@ -59,7 +61,13 @@ async function startSock() {
   });
 }
 
-startSock();
+// Only auto-connect at boot if a session already exists. If we've never been
+// paired, wait for a deliberate "Show QR code" click from the dashboard —
+// contacting WhatsApp automatically on every restart is what triggers its
+// device-link rate limit when the process restarts often (e.g. on deploys).
+if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
+  startSock();
+}
 
 const app = express();
 app.use(express.json());
