@@ -70,6 +70,23 @@ app.get('/qr', async (req, res) => {
   </body></html>`);
 });
 
+app.get('/groups', async (req, res) => {
+  if (!AUTH_TOKEN || req.query.token !== AUTH_TOKEN) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  if (!sock?.user) {
+    return res.status(503).json({ error: 'whatsapp session not connected yet' });
+  }
+  try {
+    const groups = await sock.groupFetchAllParticipating();
+    const list = Object.values(groups).map((g) => ({ id: g.id, subject: g.subject }));
+    res.json({ ok: true, groups: list });
+  } catch (err) {
+    console.error('Failed to list groups', err);
+    res.status(500).json({ error: 'failed to list groups' });
+  }
+});
+
 app.post('/notify', async (req, res) => {
   if (!AUTH_TOKEN || req.headers.authorization !== `Bearer ${AUTH_TOKEN}`) {
     return res.status(401).json({ error: 'unauthorized' });
