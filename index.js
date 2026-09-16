@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 
 const PORT = process.env.PORT || 3000;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
+const AUTH_DIR = process.env.AUTH_DIR || './auth';
 
 if (!AUTH_TOKEN) {
   console.warn('AUTH_TOKEN is not set — /notify and /qr will reject every request');
@@ -15,7 +16,7 @@ let sock;
 let latestQR = null;
 
 async function startSock() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth');
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
   sock = makeWASocket({ auth: state });
 

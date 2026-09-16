@@ -25,7 +25,10 @@ On first run it prints a QR code in the terminal — scan it from WhatsApp on yo
    - Node.js version: 20 or 22
    - Application root: e.g. `whatsapp-bot`
    - Application startup file: `index.js`
-2. Set environment variables in the hPanel app screen: `AUTH_TOKEN` (and `PORT` if hPanel doesn't set it automatically — Passenger usually injects `PORT` itself).
+2. Set environment variables in the hPanel app screen:
+   - `AUTH_TOKEN`
+   - `AUTH_DIR` — an **absolute path outside the app's deploy directory** (e.g. `/home/<user>/mineev-bot-data/auth`). Each redeploy clones a fresh directory from git, so if the session lives inside it, it gets wiped on every deploy and you have to re-scan the QR code every time.
+   - `PORT` only if hPanel doesn't inject it automatically (Passenger/LiteSpeed usually does).
 3. Deploy the code into the application root, e.g. via SSH:
    ```bash
    cd ~/whatsapp-bot
