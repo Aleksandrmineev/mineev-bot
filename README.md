@@ -2,12 +2,20 @@
 
 WhatsApp automation service built on [Baileys](https://github.com/WhiskeySockets/Baileys). Runs as a standalone Node.js app (no browser/Chromium needed) and exposes a small HTTP API so other projects (e.g. taxi-vorbestellungen) can trigger WhatsApp messages without embedding the WhatsApp session themselves.
 
-## Endpoints
+## Dashboard
 
-- `GET /health` — `{ ok: true, connected: boolean }`
-- `POST /notify` — body `{ "to": "<phone or JID>", "message": "<text>" }`, header `Authorization: Bearer <AUTH_TOKEN>`
+`GET /` is a small admin page (password = `AUTH_TOKEN`, session cookie, no token in the URL) showing:
+- connection status and recent send activity
+- a "Show QR code" button — pairing is only ever started **on demand** from here, never in an automatic loop, to avoid tripping WhatsApp's device-link rate limit
+- the list of joined WhatsApp groups with their JIDs (needed to send to a group)
+- a test-message form
 
-`to` accepts either a raw phone number with country code (e.g. `4915112345678`) or a full JID (`4915112345678@s.whatsapp.net`).
+## External API
+
+- `GET /health` — `{ ok: true, connected: boolean }`, unauthenticated
+- `POST /notify` — body `{ "to": "<phone or JID>", "message": "<text>" }`, header `Authorization: Bearer <AUTH_TOKEN>` — for other services (e.g. Google Apps Script) to trigger a message
+
+`to` accepts either a raw phone number with country code (e.g. `4915112345678`), a full user JID (`4915112345678@s.whatsapp.net`), or a group JID (`1234567890-1234567890@g.us`, found via the dashboard's group list).
 
 ## Local setup
 
@@ -17,7 +25,7 @@ cp .env.example .env   # edit AUTH_TOKEN
 node --env-file=.env index.js
 ```
 
-On first run it prints a QR code in the terminal — scan it from WhatsApp on your phone: **Settings → Linked devices → Link a device**. The session is saved under `./auth/` (git-ignored) and reused on restarts.
+Open `http://localhost:3000`, log in with `AUTH_TOKEN`, and click "Show QR code" to pair: **WhatsApp → Settings → Linked devices → Link a device**. The session is saved under `./auth/` (git-ignored) and reused on restarts.
 
 ## Deploying on Hostinger (shared hosting, Passenger)
 
@@ -36,7 +44,7 @@ On first run it prints a QR code in the terminal — scan it from WhatsApp on yo
    ```
    (or `git pull` on subsequent deploys)
 4. In hPanel, click **Run NPM Install** (or via SSH: activate the app's venv shown on the hPanel screen, then `npm install`).
-5. Restart the app from hPanel. Check its log (hPanel → Node.js app → Logs, or via SSH) for the QR code and scan it once.
+5. Restart the app from hPanel, then open the app's URL, log in, and click "Show QR code" once to pair.
 6. The auth session (`~/whatsapp-bot/auth/`) lives only on the server — it is never committed to git and survives restarts/redeploys as long as the folder isn't deleted.
 
 ## Calling it from another project
