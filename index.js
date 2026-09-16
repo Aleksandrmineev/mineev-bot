@@ -47,11 +47,15 @@ async function startSock() {
       pairingInProgress = false;
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
-      console.log('Connection closed', { statusCode, hasEverConnected, loggedOut });
-      if (!hasEverConnected) latestQR = null; // stale QR is useless; force a fresh one on next click
-      // Only auto-reconnect a session that was already linked (e.g. a network blip).
-      // Never auto-retry pairing — that hammers WhatsApp's device-link rate limit.
-      if (hasEverConnected && !loggedOut) startSock();
+      // WhatsApp always closes the stream with 515 right after a QR scan is
+      // accepted, expecting an immediate reconnect with the now-saved creds
+      // to finish pairing — this is required, not a retry of a failed link.
+      const restartRequired = statusCode === DisconnectReason.restartRequired;
+      console.log('Connection closed', { statusCode, hasEverConnected, loggedOut, restartRequired });
+      if (!hasEverConnected && !restartRequired) latestQR = null; // stale QR is useless; force a fresh one on next click
+      // Otherwise only auto-reconnect a session that was already linked (e.g. a network blip).
+      // Never auto-retry pairing from scratch — that hammers WhatsApp's device-link rate limit.
+      if ((hasEverConnected || restartRequired) && !loggedOut) startSock();
       if (loggedOut) hasEverConnected = false;
     } else if (connection === 'open') {
       pairingInProgress = false;
