@@ -1,0 +1,19 @@
+{
+  "name": "mineev-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp automation service (Baileys) with an HTTP endpoint for triggering messages from other projects",
+  "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.19.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
