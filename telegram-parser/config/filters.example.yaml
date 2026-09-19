@@ -1,0 +1,50 @@
+# Local post-processing filters, applied after jobs are fetched and parsed.
+# Copy to config/filters.yaml (or point FILTERS_CONFIG_PATH at your own file)
+# and adjust to your own criteria. Leave a list empty ([]) to disable that filter.
+# All text matching is case-insensitive and looks at the job title and,
+# when available, its description.
+
+# A job must contain at least one of these keywords to be forwarded.
+# Empty list = no requirement.
+include_keywords: []
+# Example:
+# include_keywords:
+#   - python
+#   - backend
+
+# A job is dropped if it contains any of these keywords.
+exclude_keywords: []
+# Example:
+# exclude_keywords:
+#   - praktikum
+#   - lehrling
+
+# Currency codes to exclude from notifications. Jobs without a budget are not
+# affected. For example, use [UAH] when the platform restricts UAH projects
+# to users registered in Ukraine.
+exclude_currencies: []
+
+# When true, a project without a budget is dropped if its public text clearly
+# contains Ukrainian language or country/city markers. This is a conservative
+# heuristic because the public channel does not expose the client's account country.
+exclude_ukrainian_without_budget: false
+
+# Minimum salary (in EUR) parsed from the listing's salary text. Jobs with
+# no parseable salary are never dropped by this filter (we don't guess).
+min_salary: null
+
+# Only forward jobs whose location matches one of these (case-insensitive
+# substring match). Empty list = no restriction.
+allowed_locations: []
+# Example:
+# allowed_locations:
+#   - Wien
+#   - Graz
+
+# If true, only forward jobs explicitly marked as Homeoffice on karriere.at.
+homeoffice_only: false
+
+# Only forward jobs whose employment type contains one of these values
+# (case-insensitive substring match, e.g. "Vollzeit", "Teilzeit"). Empty
+# list = no restriction.
+employment_types: []

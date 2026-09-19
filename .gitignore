@@ -2,3 +2,12 @@ node_modules/
 auth/
 .env
 *.log
+telegram-parser/.venv/
+telegram-parser/__pycache__/
+telegram-parser/**/__pycache__/
+telegram-parser/*.egg-info/
+telegram-parser/.pytest_cache/
+telegram-parser/data/
+telegram-parser/.env
+telegram-parser/telegram.env
+ssh/

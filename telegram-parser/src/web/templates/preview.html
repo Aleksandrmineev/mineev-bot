@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Предпросмотр — karriere-telegram-parser{% endblock %}
+{% block nav_preview %}active{% endblock %}
+
+{% block content %}
+<h1>Предпросмотр поиска</h1>
+<p class="muted">
+  Делает один запрос к karriere.at (с принудительной сортировкой по дате),
+  парсит и показывает результат — ничего не сохраняет и никуда не
+  отправляет. Фильтры здесь проверяются только по заголовку — описание
+  подгружается ботом отдельно только для реально новых вакансий.
+</p>
+
+<form method="get" action="/preview" class="row">
+  <input type="url" name="url" value="{{ url }}"
+         placeholder="https://www.karriere.at/jobs?keywords=python&locations=Graz" required>
+  <button type="submit" class="primary">Проверить</button>
+</form>
+
+{% if error %}
+  <div class="error-box">{{ error }}</div>
+{% endif %}
+
+{% if normalized_url and normalized_url != url %}
+  <p class="muted">Фактически запрошено: <code>{{ normalized_url }}</code></p>
+{% endif %}
+
+{% if jobs is not none %}
+  <p class="muted">Найдено на странице: {{ jobs | length }}. Прошли бы текущие фильтры: {{ filtered_keys | length }}.</p>
+
+  {% if jobs %}
+  <table>
+    <thead>
+      <tr>
+        <th>Вакансия</th><th>Компания</th><th>Место</th><th>Занятость</th>
+        <th>Зарплата</th><th>Homeoffice</th><th>Опубликовано</th><th>Фильтр</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in jobs %}
+      <tr>
+        <td><a class="job-link" href="{{ job.url }}" target="_blank" rel="noopener">{{ job.title }}</a></td>
+        <td>{{ job.company or "—" }}</td>
+        <td>{{ job.location or "—" }}</td>
+        <td>{{ job.employment_type or "—" }}</td>
+        <td>{{ job.salary or "—" }}</td>
+        <td>
+          {% if job.homeoffice is sameas true %}да
+          {% elif job.homeoffice is sameas false %}нет
+          {% else %}не указано{% endif %}
+        </td>
+        <td class="muted">{{ job.published_raw or "—" }}</td>
+        <td>
+          {% if job.dedup_key in filtered_keys %}
+            <span class="badge ok">проходит</span>
+          {% else %}
+            <span class="badge off">отсеяна</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+{% endif %}
+{% endblock %}

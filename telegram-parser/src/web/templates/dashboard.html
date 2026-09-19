@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — job alerts{% endblock %}
+{% block nav_dashboard %}active{% endblock %}
+
+{% block content %}
+<h1>Job alerts → Telegram: дашборд</h1>
+
+{% if error == "invalid_url" %}
+  <div class="error-box">Это не похоже на ссылку поиска karriere.at (ожидается https://www.karriere.at/jobs...).</div>
+{% elif error == "duplicate" %}
+  <div class="error-box">Этот поиск уже добавлен.</div>
+{% elif error == "quick_empty" %}
+  <div class="error-box">Укажи хотя бы ключевые слова или локацию.</div>
+{% elif error == "ams_empty" %}
+  <div class="error-box">Для AMS укажи ключевые слова или локацию.</div>
+{% elif error == "freelancehunt_url" %}
+  <div class="error-box">Нужна публичная ссылка https://freelancehunt.com/projects...</div>
+{% endif %}
+
+<div class="card" id="freelancehunt-settings">
+  <p class="muted" style="margin-top:0;">Freelancehunt — безопасный режим: читается официальный публичный Telegram-канал проектов, без входа в аккаунт и без автоматических ставок.</p>
+  <form method="post" action="/searches/freelancehunt" class="quick-form">
+    <input type="url" name="url" value="https://freelancehunt.com/projects" placeholder="Ссылка Freelancehunt с фильтрами" required>
+    <input type="text" name="name" placeholder="Название поиска (необязательно)">
+    <textarea name="include_keywords" rows="3" placeholder="Ключевые слова, по одному или через запятую">WordPress
+WooCommerce
+OpenCart
+PHP
+API
+Python
+Node.js
+парсинг
+бот</textarea>
+    <textarea name="exclude_keywords" rows="2" placeholder="Исключить, по одному или через запятую">логотип
+копирайтинг
+SEO без разработки</textarea>
+    <button type="submit" class="primary">Добавить Freelancehunt</button>
+  </form>
+  <p class="muted" style="margin-bottom:0;">Уведомления будут круглосуточными. Отправки ставок здесь нет: только заказ, оценка фильтров и ссылка.</p>
+</div>
+
+<div class="card">
+  <div class="stat-row">
+    <div class="stat">
+      <div class="label">Автопроверка</div>
+      <div class="value">
+        {% if paused %}
+          <span class="badge warn">на паузе</span>
+        {% else %}
+          <span class="badge ok">активна</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="label">Telegram</div>
+      <div class="value">
+        {% if telegram_configured %}
+          <span class="badge ok">настроен</span>
+        {% else %}
+          <span class="badge off">не настроен</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="stat">
+      <div class="label">Интервал проверки</div>
+      <div class="value">{{ poll_interval_seconds }} сек</div>
+    </div>
+    <div class="stat">
+      <div class="label">Последняя проверка</div>
+      <div class="value">{{ last_check_at.strftime("%Y-%m-%d %H:%M UTC") if last_check_at else "ещё не было" }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Оценки</div>
+      <div class="value">👍 {{ feedback_counts.get('yes', 0) }} · 👎 {{ feedback_counts.get('no', 0) }}</div>
+    </div>
+  </div>
+
+  {% if not telegram_configured %}
+    <p class="muted" style="margin-top: 1rem;">
+      TELEGRAM_BOT_TOKEN и/или TELEGRAM_CHAT_ID не заданы в telegram.env — бот
+      сам вакансии слать не будет, но поисками и фильтрами здесь можно
+      управлять уже сейчас, а разбор проверить на вкладке «Предпросмотр поиска».
+    </p>
+  {% endif %}
+
+  <form method="post" action="/{{ 'resume' if paused else 'pause' }}" class="inline" style="margin-top: 0.75rem;">
+    <button type="submit">{{ "Возобновить автопроверку" if paused else "Поставить на паузу" }}</button>
+  </form>
+</div>
+
+<h2>Последние подходящие заказы</h2>
+{% if recent_jobs %}
+<table>
+  <thead><tr><th>Источник</th><th>Заказ</th><th>Бюджет</th><th>Дата</th></tr></thead>
+  <tbody>
+  {% for job in recent_jobs %}
+    <tr>
+      <td><span class="badge">{{ job.source }}</span></td>
+      <td><a class="job-link" href="{{ job.url }}" target="_blank" rel="noopener">{{ job.title }}</a></td>
+      <td>{{ job.salary or "—" }}</td>
+      <td class="muted">{{ job.published_raw or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Подходящих заказов пока не найдено.</p>
+{% endif %}
+
+<h2>Источники</h2>
+<div class="source-grid">
+{% for section in source_sections %}
+  <div class="card source-card">
+    <div class="source-card-head"><strong>{{ section.label }}</strong><span class="badge">{{ section.searches|length }} поисков</span></div>
+    <p class="muted">{% if section.source == "freelancehunt" %}Публичный канал проектов, без входа и автооткликов.{% elif section.source == "karriere" %}Вакансии karriere.at с локальной фильтрацией.{% else %}Поиск AMS через браузер Playwright.{% endif %}</p>
+    <a class="button-link" href="#{{ section.source }}-settings">Настроить</a>
+  </div>
+{% endfor %}
+</div>
+
+<h2>Сохранённые поиски</h2>
+
+<div class="card" id="karriere-settings">
+  <p class="muted" style="margin-top:0;">
+    Быстрый поиск — заполни, что нужно, ссылка на karriere.at соберётся сама:
+  </p>
+  <form method="post" action="/searches/quick" class="quick-form">
+    <input type="text" name="keywords" placeholder="Ключевые слова, например Application Support">
+    <input type="text" name="location" placeholder="Ort, Bezirk или Bundesland, например Graz, Murtal, Steiermark">
+    <input type="number" name="radius" min="0" max="100" placeholder="Радиус, км (необязательно)">
+    <label class="checkbox"><input type="checkbox" name="homeoffice" value="true"> только Homeoffice</label>
+    <button type="submit" class="primary">Добавить</button>
+  </form>
+  <p class="muted" style="margin-bottom:0;">
+    Локация — то же поле, что и в поиске на самом karriere.at: понимает
+    название города, района (Bezirk) или земли (Bundesland) как обычный
+    текст, отдельного списка регионов не требуется.
+  </p>
+</div>
+
+<p class="muted">…или вставить готовую ссылку с karriere.at (например, с доп. фильтрами прямо с сайта):</p>
+<form method="post" action="/searches" class="row">
+  <input type="url" name="url" placeholder="https://www.karriere.at/jobs?keywords=python&locations=Graz" required>
+  <button type="submit">Добавить по ссылке</button>
+</form>
+
+<div class="card" id="ams-settings">
+  <p class="muted" style="margin-top:0;">Поиск AMS — параметры передаются публичной форме «alle jobs»:</p>
+  <form method="post" action="/searches/ams" class="quick-form">
+    <input type="text" name="query" placeholder="Профессия, компетенция или компания">
+    <input type="text" name="location" placeholder="Ort, PLZ или Bundesland">
+    <input type="number" name="vicinity" min="0" max="100" placeholder="Радиус, км (необязательно)">
+    <input type="text" name="name" placeholder="Название поиска (необязательно)">
+    <button type="submit" class="primary">Добавить AMS-поиск</button>
+  </form>
+  <p class="muted" style="margin-bottom:0;">AMS-поиск использует фоновый браузер Playwright и работает только после включения <code>ENABLE_AMS=true</code>.</p>
+</div>
+
+{% if searches %}
+<table>
+  <thead>
+    <tr><th>ID</th><th>URL</th><th>Добавлен</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for s in searches %}
+    <tr>
+      <td>{{ s.id }}</td>
+      <td>
+        {% if s.source == "ams" %}
+          <span class="badge">AMS</span> {{ s.display_name }}
+        {% elif s.source == "freelancehunt" %}
+          <span class="badge">Freelancehunt</span> {{ s.display_name }}
+        {% else %}
+          <a class="job-link" href="/preview?url={{ s.url | urlencode }}">{{ s.url }}</a>
+        {% endif %}
+      </td>
+      <td class="muted">{{ s.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>
+        <form method="post" action="/searches/{{ s.id }}/delete" class="inline"
+              onsubmit="return confirm('Удалить этот поиск?');">
+          <button type="submit" class="danger">Удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Поисков пока нет — добавь первый через форму выше.</p>
+{% endif %}
+
+<h2>Активные фильтры</h2>
+<p class="muted">Из <code>{{ filters_config_path }}</code>:</p>
+<table>
+  <tbody>
+    <tr><td>Обязательные слова</td><td>{{ filter_config.include_keywords or "—" }}</td></tr>
+    <tr><td>Исключающие слова</td><td>{{ filter_config.exclude_keywords or "—" }}</td></tr>
+    <tr><td>Исключаемые валюты</td><td>{{ filter_config.exclude_currencies or "—" }}</td></tr>
+    <tr><td>Украинские без бюджета</td><td>{{ "исключаются" if filter_config.exclude_ukrainian_without_budget else "остаются" }}</td></tr>
+    <tr><td>Мин. зарплата, €/мес</td><td>{{ filter_config.min_salary or "—" }}</td></tr>
+    <tr><td>Разрешённые города</td><td>{{ filter_config.allowed_locations or "—" }}</td></tr>
+    <tr><td>Только Homeoffice</td><td>{{ "да" if filter_config.homeoffice_only else "нет" }}</td></tr>
+    <tr><td>Тип занятости</td><td>{{ filter_config.employment_types or "—" }}</td></tr>
+  </tbody>
+</table>
+{% endblock %}

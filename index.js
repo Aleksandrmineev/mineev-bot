@@ -5,6 +5,7 @@ import path from 'path';
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
+import { startTelegramParser } from './telegram-parser-worker.js';
 
 const PORT = process.env.PORT || 3000;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
@@ -16,6 +17,7 @@ if (!AUTH_TOKEN) {
 }
 
 let sock;
+let connectionState = 'disconnected';
 let latestQR = null;
 let hasEverConnected = false;
 let pairingInProgress = false;
@@ -31,7 +33,10 @@ async function startSock() {
   pairingInProgress = true;
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-  sock = makeWASocket({ auth: state });
+  // Keep the linked Baileys device offline from WhatsApp's presence
+  // perspective so the primary phone continues to receive push
+  // notifications (including sound) for incoming messages.
+  sock = makeWASocket({ auth: state, markOnlineOnConnect: false });
 
   sock.ev.on('creds.update', saveCreds);
 
@@ -44,6 +49,7 @@ async function startSock() {
     }
 
     if (connection === 'close') {
+      connectionState = 'disconnected';
       pairingInProgress = false;
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
@@ -58,6 +64,7 @@ async function startSock() {
       if ((hasEverConnected || restartRequired) && !loggedOut) startSock();
       if (loggedOut) hasEverConnected = false;
     } else if (connection === 'open') {
+      connectionState = 'connected';
       pairingInProgress = false;
       hasEverConnected = true;
       latestQR = null;
@@ -73,6 +80,8 @@ async function startSock() {
 if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
   startSock();
 }
+
+startTelegramParser();
 
 const app = express();
 app.use(express.json());
@@ -114,6 +123,41 @@ function requireSession(req, res, next) {
   next();
 }
 
+// The parser has its own FastAPI app, but it is exposed through this already
+// authenticated panel so the user does not have to log in twice.
+app.use('/parser', requireSession, async (req, res) => {
+  const suffix = req.originalUrl.slice('/parser'.length) || '/';
+  const target = `http://127.0.0.1:8000${suffix}`;
+  const headers = {};
+  if (req.headers.accept) headers.accept = req.headers.accept;
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    headers['content-type'] = req.headers['content-type'] || 'application/x-www-form-urlencoded';
+  }
+  const body = req.method === 'GET' || req.method === 'HEAD'
+    ? undefined
+    : new URLSearchParams(req.body || {}).toString();
+  try {
+    const upstream = await fetch(target, { method: req.method, headers, body, redirect: 'manual' });
+    res.status(upstream.status);
+    const location = upstream.headers.get('location');
+    if (location) {
+      return res.set('location', location.startsWith('/') ? `/parser${location}` : location).end();
+    }
+    const contentType = upstream.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      let html = await upstream.text();
+      html = html.replace(/(href|action)="\/(?!\/)/g, '$1="/parser/');
+      html = html.replace(/(href|action)=\'\/(?!\')/g, '$1=\'/parser/');
+      return res.type('html').send(html);
+    }
+    res.set('content-type', contentType);
+    return res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    console.error('Parser proxy failed', error);
+    return res.status(502).send('Parser dashboard is unavailable');
+  }
+});
+
 function layout(body) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mineev-bot</title>
@@ -127,6 +171,11 @@ function layout(body) {
     td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; }
     #qr img { max-width: 260px; }
     .ok { color: #1a7f37; } .err { color: #c62828; }
+    .service-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid #eee; }
+    .service-row:last-child { border-bottom:0; }
+    .service-meta { color:#666; font-size:13px; }
+    .service-details { margin: 0 0 8px; }
+    .service-tools { display: none; }
   </style></head><body>${body}</body></html>`;
 }
 
@@ -145,43 +194,60 @@ app.get('/', (req, res) => {
     <h1>mineev-bot <a href="/logout" style="float:right;font-size:13px;">Log out</a></h1>
 
     <section>
-      <h3>Status</h3>
-      <div id="status">loading…</div>
-    </section>
+      <h3>Сервисы</h3>
+      <div class="service-details" id="whatsappSection">
+        <div class="service-row"><div><strong>WhatsApp</strong><div id="waSummary" class="service-meta">Проверка состояния…</div></div><a href="/whatsapp"><button type="button">Настроить</button></a></div>
+        <div class="service-tools">
+          <section>
+            <h3>Status</h3>
+            <div id="status">loading…</div>
+          </section>
 
-    <section id="qrSection">
-      <h3>WhatsApp pairing</h3>
-      <button onclick="showQr()">Show QR code</button>
-      <div id="qr"></div>
-    </section>
+          <section id="qrSection">
+            <h3>WhatsApp pairing</h3>
+            <button onclick="showQr()">Show QR code</button>
+            <div id="qr"></div>
+          </section>
 
-    <section>
-      <h3>Groups</h3>
-      <button onclick="loadGroups()">Load groups</button>
-      <div id="groups"></div>
-    </section>
+          <section>
+            <h3>Groups</h3>
+            <button onclick="loadGroups()">Load groups</button>
+            <div id="groups"></div>
+          </section>
 
-    <section>
-      <h3>Send test message</h3>
-      <input type="text" id="to" placeholder="Phone or group JID">
-      <input type="text" id="message" placeholder="Message text">
-      <button onclick="sendTest()">Send</button>
-      <div id="sendResult"></div>
-    </section>
+          <section>
+            <h3>Send test message</h3>
+            <input type="text" id="to" placeholder="Phone or group JID">
+            <input type="text" id="message" placeholder="Message text">
+            <button onclick="sendTest()">Send</button>
+            <div id="sendResult"></div>
+          </section>
 
-    <section>
-      <h3>Recent activity</h3>
-      <table id="log"><thead><tr><th>Time</th><th>To</th><th>Status</th></tr></thead><tbody></tbody></table>
+          <section>
+            <h3>Recent activity</h3>
+            <table id="log"><thead><tr><th>Time</th><th>To</th><th>Status</th></tr></thead><tbody></tbody></table>
+          </section>
+        </div>
+      </div>
+      <div class="service-row"><div><strong>Freelancehunt</strong><div class="service-meta">Публичный канал, безопасный режим</div></div><a href="/parser/#freelancehunt-settings"><button type="button">Настроить</button></a></div>
+      <div class="service-row"><div><strong>karriere.at</strong><div class="service-meta">Поиск вакансий и фильтры</div></div><a href="/parser/#karriere-settings"><button type="button">Настроить</button></a></div>
+      <div class="service-row"><div><strong>AMS</strong><div class="service-meta">Поиск через браузер Playwright</div></div><a href="/parser/#ams-settings"><button type="button">Настроить</button></a></div>
     </section>
 
     <script>
       async function refreshStatus() {
         const r = await fetch('/api/status');
         const d = await r.json();
-        document.getElementById('status').innerHTML = d.connected
+        const status = document.getElementById('status');
+        const summary = document.getElementById('waSummary');
+        if (status) status.innerHTML = d.connected
           ? '<span class="ok">Connected</span> as ' + (d.user || '')
           : '<span class="err">Not connected</span>';
+        if (summary) summary.innerHTML = d.connected
+          ? '<span class="ok">Сопряжено</span> · операций за сессию: ' + (d.log || []).length
+          : '<span class="err">Не сопряжено</span>';
         const tbody = document.querySelector('#log tbody');
+        if (!tbody) return;
         tbody.innerHTML = (d.log || []).map(e =>
           '<tr><td>' + new Date(e.time).toLocaleString() + '</td><td>' + e.to + '</td><td class="' + (e.ok ? 'ok' : 'err') + '">' + (e.ok ? 'sent' : e.error) + '</td></tr>'
         ).join('');
@@ -215,6 +281,26 @@ app.get('/', (req, res) => {
   `));
 });
 
+app.get('/whatsapp', requireSession, (req, res) => {
+  res.send(layout(`
+    <h1>WhatsApp <a href="/" style="float:right;font-size:13px;">← Сервисы</a></h1>
+    <section><h3>Управление</h3><button onclick="restartApp()">Перезапустить приложение</button><div id="restartResult"></div></section>
+    <section><h3>Status</h3><div id="status">loading…</div></section>
+    <section id="qrSection"><h3>WhatsApp pairing</h3><button onclick="showQr()">Show QR code</button><div id="qr"></div></section>
+    <section><h3>Groups</h3><button onclick="loadGroups()">Load groups</button><div id="groups"></div></section>
+    <section><h3>Send test message</h3><input type="text" id="to" placeholder="Phone or group JID"><input type="text" id="message" placeholder="Message text"><button onclick="sendTest()">Send</button><div id="sendResult"></div></section>
+    <section><h3>Recent activity</h3><table id="log"><thead><tr><th>Time</th><th>To</th><th>Status</th></tr></thead><tbody></tbody></table></section>
+    <script>
+      async function refreshStatus() { const r = await fetch('/api/status'); const d = await r.json(); document.getElementById('status').innerHTML = d.connected ? '<span class="ok">Connected</span> as ' + (d.user || '') : '<span class="err">Not connected</span>'; document.querySelector('#log tbody').innerHTML = (d.log || []).map(e => '<tr><td>' + new Date(e.time).toLocaleString() + '</td><td>' + e.to + '</td><td class="' + (e.ok ? 'ok' : 'err') + '">' + (e.ok ? 'sent' : e.error) + '</td></tr>').join(''); }
+      async function restartApp() { if (!confirm('Перезапустить приложение?')) return; const result = document.getElementById('restartResult'); result.textContent = 'Перезапуск…'; try { await fetch('/api/restart', { method: 'POST' }); result.textContent = 'Приложение перезапускается.'; } catch (_) { result.textContent = 'Соединение прервано — приложение, вероятно, перезапускается.'; } }
+      async function showQr() { document.getElementById('qr').textContent = 'Loading…'; const r = await fetch('/api/qr'); const d = await r.json(); if (d.connected) document.getElementById('qr').textContent = 'Already linked — no QR needed.'; else if (d.qr) document.getElementById('qr').innerHTML = '<img src="' + d.qr + '">'; else document.getElementById('qr').textContent = d.message || 'No QR yet, try again in a few seconds.'; }
+      async function loadGroups() { document.getElementById('groups').textContent = 'Loading…'; const r = await fetch('/api/groups'); const d = await r.json(); if (!d.ok) { document.getElementById('groups').textContent = d.error; return; } document.getElementById('groups').innerHTML = '<ul>' + d.groups.map(g => '<li><code>' + g.id + '</code> — ' + g.subject + '</li>').join('') + '</ul>'; }
+      async function sendTest() { const r = await fetch('/api/send-test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to: document.getElementById('to').value, message: document.getElementById('message').value }) }); const d = await r.json(); document.getElementById('sendResult').innerHTML = d.ok ? '<span class="ok">Sent</span>' : '<span class="err">' + d.error + '</span>'; refreshStatus(); }
+      refreshStatus(); setInterval(refreshStatus, 5000);
+    </script>
+  `));
+});
+
 app.post('/login', (req, res) => {
   const password = req.body?.password || '';
   if (!AUTH_TOKEN || password !== AUTH_TOKEN) {
@@ -234,7 +320,7 @@ app.get('/logout', (req, res) => {
 // ---- dashboard API (session-protected) ----
 
 app.get('/api/status', requireSession, (req, res) => {
-  res.json({ connected: Boolean(sock?.user), user: sock?.user?.id, log: notifyLog });
+  res.json({ connected: connectionState === 'connected', user: sock?.user?.id, log: notifyLog });
 });
 
 app.get('/api/qr', requireSession, async (req, res) => {
@@ -245,6 +331,13 @@ app.get('/api/qr', requireSession, async (req, res) => {
   }
   const dataUrl = await QRCode.toDataURL(latestQR);
   res.json({ qr: dataUrl });
+});
+
+app.post('/api/restart', requireSession, (req, res) => {
+  res.json({ ok: true, message: 'Restarting application' });
+  // Let the hosting process manager start a fresh process with the updated
+  // code and saved WhatsApp credentials.
+  setTimeout(() => process.exit(0), 250);
 });
 
 app.get('/api/groups', requireSession, async (req, res) => {
@@ -268,7 +361,7 @@ app.post('/api/send-test', requireSession, async (req, res) => {
 // ---- external API (bearer-token protected, for other services e.g. Google Apps Script) ----
 
 async function sendWhatsAppMessage(to, message) {
-  if (!sock?.user) {
+  if (connectionState !== 'connected' || !sock?.user) {
     logNotify({ to, ok: false, error: 'not connected' });
     return { ok: false, error: 'whatsapp session not connected yet' };
   }
@@ -285,7 +378,7 @@ async function sendWhatsAppMessage(to, message) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, connected: Boolean(sock?.user) });
+  res.json({ ok: true, connected: connectionState === 'connected' });
 });
 
 app.post('/notify', async (req, res) => {

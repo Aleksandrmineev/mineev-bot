@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="utf-8"><title>Broken sample</title></head>
+<body>
+<div class="c-jobsSearch">
+  <div class="m-jobsSearchList__activeJobs">
+    <ol class="m-jobsList">
+      <!-- Broken item: no title link at all, parser must skip it, not crash -->
+      <li class="m-jobsList__item">
+        <div class="m-jobsListItem">
+          <div class="m-jobsListItem__dataContainer">
+            <div class="m-jobsListItem__company">Some GmbH</div>
+          </div>
+        </div>
+      </li>
+      <!-- Good item after the broken one -->
+      <li class="m-jobsList__item">
+        <div class="m-jobsListItem">
+          <div class="m-jobsListItem__dataContainer">
+            <h2 class="m-jobsListItem__title">
+              <a class="m-jobsListItem__titleLink" href="https://www.karriere.at/jobs/12345" target="_blank">Valid Job Title</a>
+            </h2>
+            <div class="m-jobsListItem__company">
+              <a class="m-jobsListItem__companyName" href="https://www.karriere.at/f/valid-gmbh">Valid GmbH</a>
+            </div>
+            <div class="m-jobsListItem__content">
+              <div class="m-jobsListItem__wrap">
+                <span class="m-jobsListItem__date">Heute veröffentlicht</span>
+                <div class="m-jobsListItem__pills">
+                  <span class="m-jobsListItem__locations m-jobsListItem__pill">
+                    <span class="m-jobsListItem__location">1010 Wien</span>
+                  </span>
+                  <span class="m-jobsListItem__pill">Vollzeit</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>
